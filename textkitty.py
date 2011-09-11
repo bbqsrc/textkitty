@@ -1,28 +1,33 @@
-import string
+import bz2
+import gzip
+import os
 import re
+import string
 
 from collections import Counter
-from io import StringIO
 from glob import glob
+from io import StringIO
+from os.path import basename, join as pjoin
+
 
 class NgramCounter(Counter):
-	def dumps(self, count=300):
+	def dumps(self, c=None):
 		out = StringIO()
-		for word, count in self.most_common(count):
+		for word, count in self.most_common(c):
 			out.write("%s\t%s\n" % (word, count))
 		return out.getvalue()
 		
-	def dump(self, f, count=300):
-		f.write(self.dumps(count))
+	def dump(self, f, c=None):
+		f.write(self.dumps(c))
 
 	@classmethod
 	def loads(cls, input):
 		counter = cls()
 		for line in input.split('\n'):
-			#print(line)
+			if isinstance(line, bytes):
+				line = line.encode('utf-8')
 			word, count = line.split('\t')
-			count = int(count)
-			counter[word] = count
+			counter[word] = int(count)
 		return counter
 
 	@classmethod
@@ -30,12 +35,14 @@ class NgramCounter(Counter):
 		counter = cls.loads(f.read().strip())
 		return counter
 
+
 def make_profile(fin, fout):
 	FrequencyProfile(fin).dump(fout)
 
+
 class FrequencyProfile(NgramCounter):
 	N = range(1, 5+1)
-	MAX_NGRAMS = 300
+	MAX_NGRAMS = 1000
 
 	def __init__(self, f=None):
 		if f is None:
@@ -84,9 +91,7 @@ class FrequencyProfile(NgramCounter):
 class TextKitty(object):
 	# XXX load all the frequencies in the path 
 	def __init__(self, f):
-		self.profiles = {}
-		for fn in glob('*.profile.txt'):
-			self.profiles[fn.split('.profile.txt')[0]] = FrequencyProfile.load(open(fn))
+		self.profiles = profiles
 		self.scores = Counter()
 		self.document = FrequencyProfile(f)
 
@@ -111,5 +116,30 @@ class TextKitty(object):
 
 	def meow(self):
 		print("KITTY GOES MEOW.")
+
+
+def classify(text):
+	return TextKitty(StringIO(text)).classify()
+
+# GLOBALS
+path = [
+	"/usr/share/textkitty/profiles",
+	os.path.expanduser("~/.textkitty/profiles"),
+	"./profiles",
+	"."
+]
+profiles = {}
+for d in path:
+	for fn in glob(pjoin(d, "*.profile.txt*")):
+		ftypes = {
+			"bz2": bz2.BZ2File,
+			"gz": gzip.GzipFile,
+			"txt": open
+		}
+		try:
+			f = ftypes.get(fn.split('.')[-1])(fn, 'r')
+			profiles[basename(fn.split('.profile.txt')[0])] = FrequencyProfile.load(f)
+		except IOError:
+			print("Unexpected filetype for file: %s. Continuing." % fn)
 
 
